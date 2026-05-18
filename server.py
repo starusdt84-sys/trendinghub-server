@@ -21,6 +21,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 환경변수에서 유튜브 API 키 로드
+YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY", "")
+
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
     "Accept-Language": "ko-KR,ko;q=0.9",
@@ -230,6 +233,57 @@ async def get_hackernews():
 
     result = {"site": "hackernews", "name": "Hacker News", "posts": posts}
     set_cache("hackernews", result)
+    return result
+
+
+# ─── 유튜브 숏츠 ───
+@app.get("/api/shorts")
+async def get_shorts():
+    cached = get_cache("shorts")
+    if cached: return cached
+
+    if not YOUTUBE_API_KEY:
+        return {"shorts": [], "error": "API 키 없음"}
+
+    videos = []
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            res = await client.get(
+                "https://www.googleapis.com/youtube/v3/videos",
+                params={
+                    "part": "snippet,statistics,contentDetails",
+                    "chart": "mostPopular",
+                    "regionCode": "KR",
+                    "maxResults": 20,
+                    "key": YOUTUBE_API_KEY
+                }
+            )
+            data = res.json()
+            for item in data.get("items", []):
+                vid = item["id"]
+                snippet = item.get("snippet", {})
+                stats = item.get("statistics", {})
+                duration = item.get("contentDetails", {}).get("duration", "")
+                views = int(stats.get("viewCount", 0))
+                likes = int(stats.get("likeCount", 0))
+                comments = int(stats.get("commentCount", 0))
+                if views < 100000: continue
+                videos.append({
+                    "id": vid,
+                    "title": snippet.get("title", ""),
+                    "channel": snippet.get("channelTitle", ""),
+                    "views": views,
+                    "likes": likes,
+                    "comments": comments,
+                    "thumbnail": snippet.get("thumbnails", {}).get("high", {}).get("url", ""),
+                    "duration": duration
+                })
+        logger.info(f"유튜브 숏츠 {len(videos)}개 수집")
+    except Exception as e:
+        logger.error(f"유튜브 수집 실패: {e}")
+
+    result = {"shorts": videos[:15]}
+    set_cache("shorts", result)
     return result
 
 

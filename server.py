@@ -53,176 +53,77 @@ async def root():
 
 
 # ─── 디시인사이드 ───
+# ─── 한국 뉴스 RSS ───
 @app.get("/api/dcinside")
 async def get_dcinside():
-    cached = get_cache("dcinside")
-    if cached: return cached
+    return await get_naver_news()
 
-    posts = []
-    urls = [
-        "https://gall.dcinside.com/board/lists/?id=humor",
-        "https://gall.dcinside.com/mgallery/board/lists/?id=programming",
-        "https://m.dcinside.com/board/humor"
-    ]
-    try:
-        async with httpx.AsyncClient(
-            headers={
-                **HEADERS,
-                "Cookie": "adult_join=1",
-                "X-Requested-With": "XMLHttpRequest"
-            },
-            timeout=15,
-            follow_redirects=True
-        ) as client:
-            for url in urls:
-                try:
-                    res = await client.get(url)
-                    if res.status_code != 200:
-                        continue
-                    soup = BeautifulSoup(res.text, "html.parser")
-                    rows = soup.select("tr.us-post, tr[data-no], .ub-content")
-                    for row in rows[:20]:
-                        title_el = row.select_one(".gall-tit a, .t-tcatls a, .subject a")
-                        if not title_el: continue
-                        title = title_el.get_text(strip=True)
-                        if len(title) < 3 or "공지" in title: continue
-                        href = title_el.get("href", "")
-                        post_url = href if href.startswith("http") else f"https://gall.dcinside.com{href}"
-                        views_el = row.select_one(".gall-count, .view-cnt")
-                        views = views_el.get_text(strip=True) if views_el else "0"
-                        recomm_el = row.select_one(".gall-recommend, .recommend")
-                        recomm = recomm_el.get_text(strip=True) if recomm_el else "0"
-                        posts.append({
-                            "title": title,
-                            "url": post_url,
-                            "views": views,
-                            "recomm": recomm,
-                            "hot": int(views.replace(",","") or 0) > 3000
-                        })
-                    if posts:
-                        break
-                except Exception as e:
-                    logger.error(f"디시 URL {url} 실패: {e}")
-                    continue
-        logger.info(f"디시 {len(posts)}개 수집")
-    except Exception as e:
-        logger.error(f"디시 수집 실패: {e}")
-
-    result = {"site": "dcinside", "name": "디시인사이드", "posts": posts[:15]}
-    set_cache("dcinside", result)
-    return result
-
-
-# ─── 보배드림 ───
 @app.get("/api/bobae")
 async def get_bobae():
-    cached = get_cache("bobae")
-    if cached: return cached
+    return await get_daum_news()
 
-    posts = []
-    try:
-        async with httpx.AsyncClient(headers=HEADERS, timeout=10, follow_redirects=True) as client:
-            res = await client.get("https://www.bobaedream.co.kr/list?code=funny")
-            soup = BeautifulSoup(res.text, "html.parser")
-            rows = soup.select("tr.bbs-list")
-            for row in rows[:20]:
-                title_el = row.select_one("a.bTitle, td.title a")
-                if not title_el: continue
-                title = title_el.get_text(strip=True)
-                if len(title) < 3: continue
-                href = title_el.get("href", "")
-                url = href if href.startswith("http") else f"https://www.bobaedream.co.kr{href}"
-                count_el = row.select_one(".count, .view")
-                views = count_el.get_text(strip=True) if count_el else "0"
-                posts.append({
-                    "title": title,
-                    "url": url,
-                    "views": views,
-                    "recomm": "0",
-                    "hot": int(views.replace(",","") or 0) > 1000
-                })
-        logger.info(f"보배 {len(posts)}개 수집")
-    except Exception as e:
-        logger.error(f"보배 수집 실패: {e}")
-
-    result = {"site": "bobae", "name": "보배드림", "posts": posts[:15]}
-    set_cache("bobae", result)
-    return result
-
-
-# ─── 이토랜드 ───
 @app.get("/api/etoland")
 async def get_etoland():
-    cached = get_cache("etoland")
-    if cached: return cached
+    return await get_yonhap_news()
 
-    posts = []
-    try:
-        async with httpx.AsyncClient(headers=HEADERS, timeout=10, follow_redirects=True) as client:
-            res = await client.get("https://www.etoland.co.kr/plugin/sns/board.php?bo_table=etohumor01")
-            soup = BeautifulSoup(res.text, "html.parser")
-            items = soup.select("div.gall-item, li.item, .list-item, tr")
-            for item in items[:30]:
-                title_el = item.select_one("a.subject, .title a, td.title a, a")
-                if not title_el: continue
-                title = title_el.get_text(strip=True)
-                if len(title) < 5 or "로그인" in title or "회원" in title: continue
-                href = title_el.get("href", "")
-                if not href or href == "#": continue
-                url = href if href.startswith("http") else f"https://www.etoland.co.kr{href}"
-                posts.append({
-                    "title": title,
-                    "url": url,
-                    "views": "-",
-                    "recomm": "0",
-                    "hot": False
-                })
-                if len(posts) >= 15: break
-        logger.info(f"이토 {len(posts)}개 수집")
-    except Exception as e:
-        logger.error(f"이토 수집 실패: {e}")
-
-    result = {"site": "etoland", "name": "이토랜드", "posts": posts[:15]}
-    set_cache("etoland", result)
-    return result
-
-
-# ─── 웃긴대학 ───
 @app.get("/api/humoruniv")
 async def get_humoruniv():
-    cached = get_cache("humoruniv")
-    if cached: return cached
+    return await get_yna_entertainment()
 
+async def parse_rss(url: str, site: str, name: str):
+    cached = get_cache(site)
+    if cached: return cached
     posts = []
     try:
         async with httpx.AsyncClient(headers=HEADERS, timeout=10, follow_redirects=True) as client:
-            res = await client.get("https://humoruniv.com/board/humor/list.html")
-            soup = BeautifulSoup(res.text, "html.parser")
-            rows = soup.select("li.li_post, tr.post, .post-item, table tr")
-            for row in rows[:30]:
-                title_el = row.select_one("a.pvi_title, .title a, td.title a")
-                if not title_el: continue
-                title = title_el.get_text(strip=True)
-                if len(title) < 3 or "로그인" in title: continue
-                href = title_el.get("href", "")
-                url = href if href.startswith("http") else f"https://humoruniv.com{href}"
-                view_el = row.select_one(".view_count, .count")
-                views = view_el.get_text(strip=True) if view_el else "0"
+            res = await client.get(url)
+            soup = BeautifulSoup(res.text, "xml")
+            items = soup.find_all("item")[:15]
+            for item in items:
+                title = item.find("title")
+                link = item.find("link")
+                desc = item.find("description")
+                pub = item.find("pubDate")
+                if not title or not link: continue
+                title_txt = title.get_text(strip=True)
+                link_txt = link.get_text(strip=True) if link.get_text(strip=True) else (link.next_sibling or "")
+                if len(title_txt) < 3: continue
                 posts.append({
-                    "title": title,
-                    "url": url,
-                    "views": views,
-                    "recomm": "0",
-                    "hot": int(views.replace(",","") or 0) > 1000
+                    "title": title_txt,
+                    "url": str(link_txt).strip(),
+                    "views": pub.get_text(strip=True)[:16] if pub else "",
+                    "recomm": "",
+                    "hot": False
                 })
-                if len(posts) >= 15: break
-        logger.info(f"웃대 {len(posts)}개 수집")
     except Exception as e:
-        logger.error(f"웃대 수집 실패: {e}")
-
-    result = {"site": "humoruniv", "name": "웃긴대학", "posts": posts[:15]}
-    set_cache("humoruniv", result)
+        logger.error(f"{site} RSS 실패: {e}")
+    result = {"site": site, "name": name, "posts": posts}
+    set_cache(site, result)
     return result
+
+async def get_naver_news():
+    return await parse_rss(
+        "https://news.naver.com/main/rss/rankingNews.naver",
+        "naver", "네이버 뉴스"
+    )
+
+async def get_daum_news():
+    return await parse_rss(
+        "https://news.daum.net/rss/newsstand",
+        "daum", "다음 뉴스"
+    )
+
+async def get_yonhap_news():
+    return await parse_rss(
+        "https://www.yonhapnewstv.co.kr/feed/",
+        "yonhap", "연합뉴스TV"
+    )
+
+async def get_yna_entertainment():
+    return await parse_rss(
+        "https://www.yna.co.kr/rss/entertainment.xml",
+        "yna_ent", "연합뉴스 연예"
+    )
 
 
 # ─── Hacker News ───

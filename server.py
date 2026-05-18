@@ -103,20 +103,20 @@ async def parse_rss(url: str, site: str, name: str):
 
 async def get_naver_news():
     return await parse_rss(
-        "https://news.naver.com/main/rss/rankingNews.naver",
-        "naver", "네이버 뉴스"
+        "https://feeds.feedburner.com/yonhapnews_headline",
+        "naver", "연합뉴스 헤드라인"
     )
 
 async def get_daum_news():
     return await parse_rss(
-        "https://news.daum.net/rss/newsstand",
-        "daum", "다음 뉴스"
+        "https://www.chosun.com/arc/outboundfeeds/rss/?outputType=xml",
+        "daum", "조선일보"
     )
 
 async def get_yonhap_news():
     return await parse_rss(
-        "https://www.yonhapnewstv.co.kr/feed/",
-        "yonhap", "연합뉴스TV"
+        "https://www.yna.co.kr/rss/news.xml",
+        "yonhap", "연합뉴스"
     )
 
 async def get_yna_entertainment():

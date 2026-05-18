@@ -59,29 +59,51 @@ async def get_dcinside():
     if cached: return cached
 
     posts = []
+    urls = [
+        "https://gall.dcinside.com/board/lists/?id=humor",
+        "https://gall.dcinside.com/mgallery/board/lists/?id=programming",
+        "https://m.dcinside.com/board/humor"
+    ]
     try:
-        async with httpx.AsyncClient(headers=HEADERS, timeout=10, follow_redirects=True) as client:
-            res = await client.get("https://gall.dcinside.com/board/lists/?id=humor")
-            soup = BeautifulSoup(res.text, "html.parser")
-            rows = soup.select("tr.us-post, tr[data-no]")
-            for row in rows[:20]:
-                title_el = row.select_one(".gall-tit a, .t-tcatls a")
-                if not title_el: continue
-                title = title_el.get_text(strip=True)
-                if len(title) < 3 or "공지" in title: continue
-                href = title_el.get("href", "")
-                url = href if href.startswith("http") else f"https://gall.dcinside.com{href}"
-                views = row.select_one(".gall-count")
-                views_txt = views.get_text(strip=True) if views else "0"
-                recomm = row.select_one(".gall-recommend")
-                recomm_txt = recomm.get_text(strip=True) if recomm else "0"
-                posts.append({
-                    "title": title,
-                    "url": url,
-                    "views": views_txt,
-                    "recomm": recomm_txt,
-                    "hot": int(views_txt.replace(",","") or 0) > 5000
-                })
+        async with httpx.AsyncClient(
+            headers={
+                **HEADERS,
+                "Cookie": "adult_join=1",
+                "X-Requested-With": "XMLHttpRequest"
+            },
+            timeout=15,
+            follow_redirects=True
+        ) as client:
+            for url in urls:
+                try:
+                    res = await client.get(url)
+                    if res.status_code != 200:
+                        continue
+                    soup = BeautifulSoup(res.text, "html.parser")
+                    rows = soup.select("tr.us-post, tr[data-no], .ub-content")
+                    for row in rows[:20]:
+                        title_el = row.select_one(".gall-tit a, .t-tcatls a, .subject a")
+                        if not title_el: continue
+                        title = title_el.get_text(strip=True)
+                        if len(title) < 3 or "공지" in title: continue
+                        href = title_el.get("href", "")
+                        post_url = href if href.startswith("http") else f"https://gall.dcinside.com{href}"
+                        views_el = row.select_one(".gall-count, .view-cnt")
+                        views = views_el.get_text(strip=True) if views_el else "0"
+                        recomm_el = row.select_one(".gall-recommend, .recommend")
+                        recomm = recomm_el.get_text(strip=True) if recomm_el else "0"
+                        posts.append({
+                            "title": title,
+                            "url": post_url,
+                            "views": views,
+                            "recomm": recomm,
+                            "hot": int(views.replace(",","") or 0) > 3000
+                        })
+                    if posts:
+                        break
+                except Exception as e:
+                    logger.error(f"디시 URL {url} 실패: {e}")
+                    continue
         logger.info(f"디시 {len(posts)}개 수집")
     except Exception as e:
         logger.error(f"디시 수집 실패: {e}")
